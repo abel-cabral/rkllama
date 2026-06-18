@@ -161,10 +161,11 @@ def load_model(model_name, huggingface_path=None, system="", From=None, request_
         request_options = get_model_full_options(model_name, rkllama.config.get_path("models"), request_options)
 
     # Model loaded into memory
-    model_loaded = variables.worker_manager_rkllm.add_worker(model_name, model_path, model_dir, options=request_options, loaded_by=loaded_by)
+    model_loaded, load_error = variables.worker_manager_rkllm.add_worker(model_name, model_path, model_dir, options=request_options, loaded_by=loaded_by)
 
     if not model_loaded:
-        return None, f"Unexpected Error loading the model {model_name} into memory. Check the file .rkllm is not corrupted, properties in Modelfile (like Context Length allowed by the model) and resources available in the server"
+        error_msg = load_error or f"Unexpected error loading model '{model_name}'. Check if model file is valid and resources are available."
+        return None, error_msg
     else:
         return None, None
 

@@ -861,13 +861,13 @@ class WorkerManager:
 
     def get_available_base_domain_id(self, reverse_order=False) -> int | None:
         """
-        Returns the smallest available integer between 1 and 10
+        Returns the smallest available integer between 1 and max_number_models_loaded_in_memory
         that is not already used as 'base_domain_id' in the current list of worker process.
-        If all numbers from 1 to 10 are taken, returns None.
+        If all numbers are taken, returns None.
 
         Args:
             reverse_order (bool): If true, search from the highest to the lowest.
-        
+
         Returns:
             int | None: The available base_domain_id or None if all are taken.
         """
@@ -878,13 +878,10 @@ class WorkerManager:
         max_domain_id = int(rkllama.config.get("model", "max_number_models_loaded_in_memory"))
 
         if reverse_order:
-            # CHeck fir available from the highest to the lowest
             candidates_range = range(max_domain_id, 0, -1)
         else:
-            # CHeck first available from the lowest to the highest  
-            candidates_range = range(1, max_domain_id)
-        
-        # CHeck check availables
+            candidates_range = range(1, max_domain_id + 1)
+
         available_domains = []
         for candidate in candidates_range:
             if candidate not in used_base_domain_ids:
@@ -902,48 +899,60 @@ class WorkerManager:
         return model_name in self.workers.keys()
 
 
-    def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> bool:
+    def add_worker(self, model_name, model_path, model_dir, options=None, lora_model_path = None, prompt_cache_path = None, loaded_by=None) -> tuple:
         """
         Add a process worker to run inferences call from a specific model
 
         Args:
             model_name (str): model name to load in memory
             loaded_by (str): identifier of the client/process that triggered the load
+
+        Returns:
+            tuple: (bool, str|None) - (success, error_message)
         """
-        if model_name not in self.workers.keys():
+        if model_name in self.workers.keys():
+            logger.info(f"Model {model_name} already loaded in memory")
+            return True, None
 
-            if is_rkllm_model(model_name) or is_gguf_model(model_name):
-                # Get the available domain id for the RKLLM process
-                base_domain_ids = self.get_available_base_domain_id(reverse_order=True)
-            else:
-                # RKNNLite library doesnt allow to specify base domain id
-                base_domain_ids = [0]
+        single_model_mode = rkllama.config.get("model", "single_model_mode")
+        if isinstance(single_model_mode, str):
+            single_model_mode = single_model_mode.lower() in ("true", "1", "yes", "on")
 
-            # Add the worker to the dictionary of workers
-            worker_model = Worker(model_name,base_domain_ids[0],loaded_by=loaded_by)
+        if single_model_mode and self.workers:
+            logger.info(f"single_model_mode enabled: unloading all current models before loading {model_name}")
+            self.stop_all()
 
-            # Check if available meory in server
-            if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
-                # Unload the oldest model until memory avilable
-                self.unload_oldest_models_from_memory(worker_model.worker_model_info.size)
+        if is_rkllm_model(model_name) or is_gguf_model(model_name):
+            base_domain_ids = self.get_available_base_domain_id(reverse_order=True)
+        else:
+            base_domain_ids = [0]
 
-            # Ensure free space in first base domain (0) for rknn load (only 4GB allowed by rknn)
-            if not is_rkllm_model(model_name) and not is_gguf_model(model_name) and not self.is_memory_available_for_rknn_model(worker_model.worker_model_info.size):
-                # Unload the oldest RKNN models until memory avilable in first base domain 
-                self.unload_oldest_rknn_models_from_memory(worker_model.worker_model_info.size)
+        worker_model = Worker(model_name, base_domain_ids[0], loaded_by=loaded_by)
 
-            # Initializae de worker/model
-            model_loaded = worker_model.create_worker_process(base_domain_ids, model_path, model_dir, options, lora_model_path, prompt_cache_path)
+        if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
+            self.unload_oldest_models_from_memory(worker_model.worker_model_info.size)
 
-            # Check the load of the model
-            if not model_loaded:
-                # Error loading the model
-                return False
-            else:    
-                # Add the worker to the dictionary of workers
-                self.workers[model_name] = worker_model
-                logger.info(f"Worker for model {model_name} created and running...")
-                return True
+        if not is_rkllm_model(model_name) and not is_gguf_model(model_name) and not self.is_memory_available_for_rknn_model(worker_model.worker_model_info.size):
+            self.unload_oldest_rknn_models_from_memory(worker_model.worker_model_info.size)
+
+        if not self.is_memory_available_for_model(worker_model.worker_model_info.size):
+            avail_mb = psutil.virtual_memory().available // (1024 * 1024)
+            needed_mb = int(worker_model.worker_model_info.size * 1.20) // (1024 * 1024)
+            error_msg = (f"Insufficient memory to load model '{model_name}': "
+                        f"required ~{needed_mb} MB, available ~{avail_mb} MB")
+            logger.error(error_msg)
+            return False, error_msg
+
+        model_loaded = worker_model.create_worker_process(base_domain_ids, model_path, model_dir, options, lora_model_path, prompt_cache_path)
+
+        if not model_loaded:
+            error_msg = f"Failed to initialize worker for model '{model_name}'. Check if model file is valid and resources are available."
+            logger.error(error_msg)
+            return False, error_msg
+        else:
+            self.workers[model_name] = worker_model
+            logger.info(f"Worker for model {model_name} created and running...")
+            return True, None
 
     def unload_oldest_rknn_models_from_memory(self, memory_required):
         """
@@ -1016,7 +1025,9 @@ class WorkerManager:
         Args:
             model_size (int) -> Size of the model to load
         """
-        return (psutil.virtual_memory().available + psutil.virtual_memory().free) > (model_size * 1.20) # Include 20% more memory required than the model size
+        available = psutil.virtual_memory().available
+        required = model_size * 1.20
+        return available > required
     
 
     def is_memory_available_for_rknn_model(self, model_size) -> bool:
