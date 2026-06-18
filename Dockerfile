@@ -43,27 +43,12 @@ RUN git clone https://github.com/invisiofficial/rk-llama.cpp.git
 
 WORKDIR /opt/rkllama/rk-llama.cpp
 
-RUN ARCH="${TARGETARCH:-}" && \
-    if [ -z "$ARCH" ]; then ARCH="$(uname -m)"; fi && \
-    if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
-        echo "Building for ARM64 with RKNPU2 support..."; \
-        rm -rf build && \
-        cmake -S . -B build \
-            -DLLAMA_RKNPU2=ON \
-            -DCMAKE_C_COMPILER=clang-21 \
-            -DCMAKE_CXX_COMPILER=clang++-21 && \
-        cmake --build build -j "$(nproc)"; \
-    elif [ "$ARCH" = "x86_64" ] || [ "$ARCH" = "amd64" ]; then \
-        echo "Building for AMD64 (CPU only)..."; \
-        rm -rf build && \
-        cmake -S . -B build \
-            -DCMAKE_C_COMPILER=clang-21 \
-            -DCMAKE_CXX_COMPILER=clang++-21 && \
-        cmake --build build -j "$(nproc)"; \
-    else \
-        echo "Unsupported architecture: ${ARCH}"; \
-        exit 1; \
-    fi
+RUN rm -rf build && \
+    cmake -S . -B build \
+        -DLLAMA_RKNPU2=ON \
+        -DCMAKE_C_COMPILER=clang-21 \
+        -DCMAKE_CXX_COMPILER=clang++-21 && \
+    cmake --build build -j "$(nproc)"
 
 ################################################## llama.cpp #######################################################
 
