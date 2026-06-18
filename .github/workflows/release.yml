@@ -74,7 +74,7 @@ jobs:
           tags: |
             rkllama:${{ needs.check-version.outputs.current-version }}
             rkllama:latest
-          platforms: linux/arm64,linux/amd64
+          platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -166,7 +166,7 @@ jobs:
           tags: |
             ${{ vars.USERNAME }}/rkllama:${{ needs.check-version.outputs.current-version }}
             ${{ vars.USERNAME }}/rkllama:latest
-          platforms: linux/arm64,linux/amd64
+          platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
