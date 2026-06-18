@@ -1,0 +1,68 @@
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git files
+.git/
+.gitignore
+
+# Models (too large, git-ignored anyway)
+models/
+src/rkllama/config/models/
+
+# Cache and logs
+logs/
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker build cache
+.dockerignore
+
+# Dependencies (pre-compiled wheels)
+src/rkllama/lib/
+
+# Config files (user-specific)
+config/rkllama.ini
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+
+# Node modules (if any frontend)
+node_modules/
+package-lock.json
+yarn.lock
+
+# OS files
+.DS_Store
+Thumbs.db
