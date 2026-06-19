@@ -222,7 +222,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
     _set_parent_death_signal()
 
     # Initialize individual callback for each worker to prevent error from RKLLM
-    from .callback import callback_impl, global_text, last_embeddings, global_metrics
+    from .callback import callback_impl, global_text, global_text_event, last_embeddings, global_metrics
     from .rkllm import RKLLM
 
     # Connect the callback function between Python and C++ independently for each worker
@@ -271,9 +271,10 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
             elif task == WORKER_TASK_INFERENCE:
                 logger.info(f"Running inference for model {name}...")
                 # Run inference
+                global_text_event.clear()
                 thread_model = threading.Thread(target=model_rkllm.run, args=(inference_mode, model_input_type, model_input,))
                 thread_model.start()
-                
+
                 # Looping until execution of the thread
                 thread_finished = False
                 while not thread_finished:
@@ -281,7 +282,7 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
                     # Check for abort of inference
                     if abort_flag.value:
                         # Exit the current loop
-                        break 
+                        break
 
                     tokens_processed = False
                     while len(global_text) > 0:
@@ -292,10 +293,12 @@ def run_rkllm_worker(name, task_queue, result_queue, abort_flag, model_path, mod
                     # Update status of the thread
                     thread_model.join(timeout=0.001)
                     thread_finished = not thread_model.is_alive()
-                    
-                    # Only sleep if no tokens were processed and thread is still alive
+
+                    # Block until the callback signals a new token or completion, instead of
+                    # polling on a fixed interval; bounded wait keeps abort checks responsive.
                     if not tokens_processed and not thread_finished:
-                        time.sleep(0.001)
+                        global_text_event.wait(timeout=0.05)
+                        global_text_event.clear()
 
                 # Check for abort of inference
                 if abort_flag.value:
@@ -406,12 +409,18 @@ def run_llama_cpp_model_server(model_name, gguf_model_dir, gguf_model_path, port
         # Set the CPU based on processor
         processor = rkllama.config.get("platform", "processor", None)
         cpu = "4-7" if processor.lower() in ["rk3576", "rk3588"] else "1-3"
+        cpu_low, cpu_high = (int(bound) for bound in cpu.split("-"))
+
+        # Number of threads for llama.cpp: configurable, 0 = auto (match the pinned core count)
+        threads = rkllama.config.get("model", "llama_cpp_threads", 4, as_type=int)
+        if not threads:
+            threads = cpu_high - cpu_low + 1
 
         # Construct the command to llama.cpp with default values
-        cmd = ["taskset" ,"--cpu-list", cpu , os.path.join(rkllama.config.get_path("llamacpp"), "llama-server"), 
-              "--model" , gguf_model_path, 
-              "--port" , str(port), 
-              "--threads" , "4"] # Defauul 4 threads
+        cmd = ["taskset" ,"--cpu-list", cpu , os.path.join(rkllama.config.get_path("llamacpp"), "llama-server"),
+              "--model" , gguf_model_path,
+              "--port" , str(port),
+              "--threads" , str(threads)]
         
         # Read custom arguments to llama.cpp
         if configuration is not None and "ARGS" in configuration.keys():

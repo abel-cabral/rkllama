@@ -54,16 +54,20 @@ class RKLLM(object):
         # Extend parameters for RKLLM
         self.rkllm_param.extend_param.base_domain_id = self.base_domain_id
         self.rkllm_param.extend_param.embed_flash = 1
-        self.rkllm_param.extend_param.n_batch = 1
+        self.rkllm_param.extend_param.n_batch = int(options.get("n_batch", rkllama.config.get("model", "rkllm_prefill_batch", 1, as_type=int)))
         self.rkllm_param.extend_param.use_cross_attn = 0
-        #self.rkllm_param.extend_param.enabled_cpus_num = multiprocessing.cpu_count()
-        self.rkllm_param.extend_param.enabled_cpus_num = 4  
-        #self.rkllm_param.extend_param.enabled_cpus_mask = (1<<(self.rkllm_param.extend_param.enabled_cpus_num+1))-1
+
+        # Recommended new way by Rockchip: pin to the high-performance cluster
         processor = rkllama.config.get("platform", "processor", None)
-        if processor.lower() in ["rk3576", "rk3588"]: # Recommended new way by Rockchip
-            self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)
+        if processor.lower() in ["rk3576", "rk3588"]:
+            cpu_mask = (1 << 4)|(1 << 5)|(1 << 6)|(1 << 7)
         else:
-            self.rkllm_param.extend_param.enabled_cpus_mask = (1 << 0)|(1 << 1)|(1 << 2)|(1 << 3)
+            cpu_mask = (1 << 0)|(1 << 1)|(1 << 2)|(1 << 3)
+        max_cpus = bin(cpu_mask).count("1")
+
+        cpu_threads = rkllama.config.get("model", "rkllm_cpu_threads", 0, as_type=int)
+        self.rkllm_param.extend_param.enabled_cpus_num = min(cpu_threads, max_cpus) if cpu_threads else max_cpus
+        self.rkllm_param.extend_param.enabled_cpus_mask = cpu_mask
         
         
         # Initialization of the RKLLM model

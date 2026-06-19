@@ -1,4 +1,4 @@
-import ctypes, sys
+import ctypes, sys, threading
 import numpy as np
 from .classes import *
 from .variables import *
@@ -8,6 +8,9 @@ global_text = []
 split_byte_data = bytes(b"")
 last_embeddings = []
 global_metrics = []
+# Signaled whenever global_text gains a token or the run finishes/errors,
+# so the worker loop can block instead of polling on a fixed interval.
+global_text_event = threading.Event()
 
 
 # Definir la fonction de rappel
@@ -16,6 +19,7 @@ def callback_impl(result, userdata, status):
 
     if status == LLMCallState.RKLLM_RUN_FINISH:
         global_status = status
+        global_text_event.set()
         
         # Get the metrics for the current inference
         prefill_tokens = result.contents.perf.prefill_tokens
@@ -34,6 +38,7 @@ def callback_impl(result, userdata, status):
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_ERROR:
         global_status = status
+        global_text_event.set()
         print("Execution Error")
         sys.stdout.flush()
     elif status == LLMCallState.RKLLM_RUN_NORMAL:
@@ -55,6 +60,7 @@ def callback_impl(result, userdata, status):
                 try:
                     decoded_text = (split_byte_data + text_bytes).decode('utf-8')
                     global_text.append(decoded_text)
+                    global_text_event.set()
                     print(decoded_text, end='')
                     split_byte_data = bytes(b"")
                 except UnicodeDecodeError:
@@ -67,6 +73,7 @@ def callback_impl(result, userdata, status):
                         # Try to decode any accumulated bytes
                         decoded_text = split_byte_data.decode('utf-8')
                         global_text.append(decoded_text)
+                        global_text_event.set()
                         print(decoded_text, end='')
                         split_byte_data = bytes(b"")
                     except UnicodeDecodeError:

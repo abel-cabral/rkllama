@@ -274,6 +274,9 @@ def create_rkllama_schema() -> ConfigSchema:
     model.integer("max_seconds_waiting_worker_response", 300, "Max number of seconds waiting for a worker response in an inference", min_value=1)
     model.integer("max_days_prompt_cache", 1, "Max number of days to wait before delete unused prompt cache files", min_value=1)
     model.boolean("single_model_mode", True, "If True, unload all models before loading a new one (keeps only 1 model in memory at a time)")
+    model.integer("llama_cpp_threads", 4, "Number of CPU threads for llama.cpp (GGUF) inference; 0 = auto-detect from available CPU cores", min_value=0)
+    model.integer("rkllm_cpu_threads", 0, "Number of CPU cores enabled to assist RKLLM (NPU) inference; 0 = auto (use all cores in the pinned cluster)", min_value=0)
+    model.integer("rkllm_prefill_batch", 1, "Batch size for RKLLM prompt prefill; higher values can speed up prefill at the cost of more memory", min_value=1)
 
     
     
