@@ -145,7 +145,7 @@ jobs:
     environment:
       name: rkllama
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
