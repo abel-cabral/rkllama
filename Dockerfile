@@ -28,8 +28,6 @@ WORKDIR /opt/rkllama
 
 ################################################## llama.cpp #######################################################
 
-ARG TARGETARCH
-
 RUN apt-get update && \
     apt-get install -y gcc-14 g++-14 build-essential git cmake libssl-dev wget lsb-release software-properties-common gnupg apt-utils
 

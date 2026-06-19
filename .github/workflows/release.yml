@@ -52,7 +52,10 @@ jobs:
 
   build-docker:
     name: Build Docker Image
-    runs-on: ubuntu-latest
+    # Native arm64 runner: no QEMU emulation. Do NOT add `platforms: linux/arm64`
+    # below — on a native runner that flag forces QEMU-backed cross-compilation,
+    # which is what made this build slow (see docker-publish.yml for the same fix).
+    runs-on: [ubuntu-24.04-arm]
     needs: check-version
     if: needs.check-version.outputs.should-release == 'true'
     permissions:
@@ -74,7 +77,6 @@ jobs:
           tags: |
             rkllama:${{ needs.check-version.outputs.current-version }}
             rkllama:latest
-          platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -136,7 +138,8 @@ jobs:
 
   push-docker-hub:
     name: Push to Docker Hub
-    runs-on: ubuntu-latest
+    # Native arm64 runner: no QEMU emulation (see build-docker job above).
+    runs-on: [ubuntu-24.04-arm]
     needs: [check-version, create-release]
     if: needs.check-version.outputs.should-release == 'true'
     environment:
@@ -166,7 +169,6 @@ jobs:
           tags: |
             ${{ vars.USERNAME }}/rkllama:${{ needs.check-version.outputs.current-version }}
             ${{ vars.USERNAME }}/rkllama:latest
-          platforms: linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
